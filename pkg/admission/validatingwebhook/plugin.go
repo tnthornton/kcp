@@ -39,11 +39,19 @@ import (
 
 	kcpinitializers "github.com/kcp-dev/kcp/pkg/admission/initializers"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
+	"github.com/kcp-dev/kcp/sdk/apis/core"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 
 const (
 	PluginName = "apis.kcp.io/ValidatingWebhook"
+)
+
+var (
+	// Specially handle namespace resources so that
+	// ValidatingWebhookConfigurations with webhook configurations for
+	// namespaces work without needing an APIBinding for each Workspace.
+	ns = schema.GroupResource{Resource: "namespaces"}
 )
 
 type Plugin struct {
@@ -167,6 +175,11 @@ func (p *Plugin) getSourceClusterForGroupResource(clusterName logicalcluster.Nam
 				return logicalcluster.Name(apiBinding.Status.APIExportClusterName), nil
 			}
 		}
+	}
+
+	// If we have a Namespace resource, redirect to the root cluster.
+	if groupResource == ns {
+		clusterName = core.RootCluster
 	}
 
 	// GroupResource is local to this cluster
