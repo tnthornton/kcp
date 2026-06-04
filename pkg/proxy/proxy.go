@@ -32,23 +32,29 @@ import (
 )
 
 func newTransport(clientCert, clientKeyFile, caFile string) (*http.Transport, error) {
+	// Validate cert and CA are readable at startup to fail fast.
+	if _, err := tls.LoadX509KeyPair(clientCert, clientKeyFile); err != nil {
+		return nil, fmt.Errorf("failed to load client certificate %q or key %q: %w", clientCert, clientKeyFile, err)
+	}
 	caCert, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA file %q: %w", caFile, err)
 	}
-
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 
-	cert, err := tls.LoadX509KeyPair(clientCert, clientKeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load client certificate %q or key %q: %w", clientCert, clientKeyFile, err)
-	}
-
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      caCertPool,
+		// GetClientCertificate re-reads the cert/key on each new connection so that
+		// certificate renewals are picked up without restarting the process.
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			cert, err := tls.LoadX509KeyPair(clientCert, clientKeyFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load client certificate %q or key %q: %w", clientCert, clientKeyFile, err)
+			}
+			return &cert, nil
+		},
+		RootCAs: caCertPool,
 	}
 
 	return transport, nil
